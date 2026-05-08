@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -35,6 +37,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
+	video, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Video not found", err)
+		return
+	}
+
+	if userID != video.UserID {
+		errMsg := fmt.Sprintf("Video w/ ID %v doesn't belong to user w/ ID %v", videoID, userID)
+		respondWithError(w, http.StatusUnauthorized, errMsg, err)
+		return
+	}
+
 	const maxMemory = 10 << 20
 	r.ParseMultipartForm(maxMemory)
 
@@ -58,19 +72,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	parts := strings.Split(mediaType, "/")
 	fileExtension := parts[1]
 
-	video, err := cfg.db.GetVideo(videoID)
-	if err != nil {
-		respondWithError(w, http.StatusNotFound, "Video not found", err)
-		return
-	}
+	seed := make([]byte, 32)
+	rand.Read(seed)
 
-	if userID != video.UserID {
-		errMsg := fmt.Sprintf("Video w/ ID %v doesn't belong to user w/ ID %v", videoID, userID)
-		respondWithError(w, http.StatusUnauthorized, errMsg, err)
-		return
-	}
-
-	newFileName := fmt.Sprintf("%s.%s", videoIDString, fileExtension)
+	newFileName := fmt.Sprintf("%s.%s", base64.RawURLEncoding.EncodeToString(seed), fileExtension)
 	thumbnailStoragePath := filepath.Join(cfg.assetsRoot, newFileName)
 
 	thumbnailFile, err := os.Create(thumbnailStoragePath)
