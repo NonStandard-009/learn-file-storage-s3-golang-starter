@@ -84,12 +84,26 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	processedFilePath, err := processVideoForFastStart(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error handling tmp file", err)
+		return
+	}
+
+	processedFile, err := os.Open(processedFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error handling processed file", err)
+		return
+	}
+	defer os.Remove(processedFile.Name())
+	defer processedFile.Close()
+
 	seed := make([]byte, 32)
 	rand.Read(seed)
 
-	ratio, err := getVideoAspectRatio(tmpFile.Name())
+	ratio, err := getVideoAspectRatio(processedFile.Name())
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error handling tmp file", err)
+		respondWithError(w, http.StatusInternalServerError, "Error handling processed file", err)
 		return
 	}
 
@@ -106,7 +120,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	params := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileKey,
-		Body:        tmpFile,
+		Body:        processedFile,
 		ContentType: &mediaType,
 	}
 
