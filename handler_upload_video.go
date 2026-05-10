@@ -87,7 +87,21 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	seed := make([]byte, 32)
 	rand.Read(seed)
 
-	fileKey := fmt.Sprintf("%s.mp4", hex.EncodeToString(seed))
+	ratio, err := getVideoAspectRatio(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error handling tmp file", err)
+		return
+	}
+
+	prefix := "other"
+	switch ratio {
+	case "16:9":
+		prefix = "landscape"
+	case "9:16":
+		prefix = "portrait"
+	}
+
+	fileKey := fmt.Sprintf("%s/%s.mp4", prefix, hex.EncodeToString(seed))
 
 	params := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
