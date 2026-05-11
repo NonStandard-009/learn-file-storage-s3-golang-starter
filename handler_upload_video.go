@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"mime"
@@ -98,9 +96,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer os.Remove(processedFile.Name())
 	defer processedFile.Close()
 
-	seed := make([]byte, 32)
-	rand.Read(seed)
-
 	ratio, err := getVideoAspectRatio(processedFile.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error handling processed file", err)
@@ -108,14 +103,17 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	prefix := "other"
+	orientation := "horizontal"
+
 	switch ratio {
 	case "16:9":
 		prefix = "landscape"
 	case "9:16":
 		prefix = "portrait"
+		orientation = "vertical"
 	}
 
-	fileKey := fmt.Sprintf("%s/%s.mp4", prefix, hex.EncodeToString(seed))
+	fileKey := fmt.Sprintf("%s/%s.mp4", prefix, orientation)
 
 	params := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
@@ -129,10 +127,17 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileKey)
+	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, fileKey)
 	video.VideoURL = &videoURL
+
 	if err := cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error updating video metadata", err)
+		return
+	}
+
+	video, err = cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error presigning video", err)
 		return
 	}
 
